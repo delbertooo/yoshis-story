@@ -25,7 +25,7 @@ D_800FD018 = 0x800FD018;
 D_80112CA0 = 0x80112CA0;
 D_801834C0 = 0x801834C0;
 D_801940C0 = 0x801940C0;
-D_801C77B0 = 0x801C77B0;
+gAudioHeap = 0x801C77B0;
 D_802078B0 = 0x802078B0;
 D_A0000000 = 0xA0000000;
 D_A0000164 = 0xA0000164;
@@ -34,3 +34,12 @@ D_A4000000 = 0xA4000000;
 D_A4001000 = 0xA4001000;
 D_B0000458 = 0xB0000458;
 D_B000045C = 0xB000045C;
+
+/* gAudioCtx's members under symbols of their own (gAudioCtx is na/session_config.c's): seven accesses in nad/ and na/
+   match only through such a symbol (include/audio.h lists them). Each offset is the member's. */
+gAudioCtxSpecUnk4 = gAudioCtx + 0x1D7C;                      /* .audioBufferParameters.specUnk4 */
+gAudioCtxTotalTaskCount = gAudioCtx + 0x1DB4;                /* .totalTaskCount */
+gAudioCtxFontCacheTemporaryEntry0Id = gAudioCtx + 0x213A;    /* .fontCache.temporary.entries[0].id */
+gAudioCtxPersistentSampleCache = gAudioCtx + 0x23F8;         /* .persistentSampleCache */
+gAudioCtxPersistentSampleCachePoolSize = gAudioCtx + 0x2400; /* .persistentSampleCache.pool.size */
+gAudioCtxSeqPlayers = gAudioCtx + 0x2A30;                    /* .seqPlayers */

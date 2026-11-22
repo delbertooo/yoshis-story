@@ -1,2 +1,5 @@
 D_80000000 = 0x80000000; // ignore:true
 LEO_C2_BUFF = 0xA5000000; // ignore:true
+// Not a pointer: an RSP instruction, `lb $12, 0xD2($zero)`, at 0x80091934 and 0x80091E00 in the microcode text at
+// D_80091640. Its value falls inside gNaiBgmBuffer (na/nai_bgm.c's .bss), so splat would make it a symbol.
+D_800C00D2 = 0x800C00D2; // ignore:true

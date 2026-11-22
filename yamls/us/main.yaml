@@ -5,28 +5,48 @@
     vram: 0x80000470
     bss_size: 0x5DFF0
     subsegments:
-      - [0x1070, asm]
-      - [0x3BF0, asm] # Probably has at least 2 file splits
-      - [0xB9A0, asm]
-      - [0xD510, asm]
-      - [0xDF30, asm]
-      - [0x11120, asm]
-      - [0x11330, asm] # Probably has at least 2 file splits
-      - [0x12520, asm]
-      - [0x128F0, asm] # Probably has at least 7 file splits
-      - [0x192E0, asm]
-      - [0x19880, asm]
-      - [0x19B90, asm]
-      - [0x19D60, asm] # Probably has at least 1 file split
-      - [0x1A5B0, asm]
-      - [0x1A930, asm]
-      - [0x1AB90, asm]
-      - [0x1B3A0, asm]
-      - [0x1B770, asm]
-      - [0x1BB80, asm]
-      - [0x1BD40, asm]
-      - [0x1C690, asm]
-      - [0x1C940, asm]
+      # The NA audio driver, the layer below src/main/na/. Outside na/, only the asm at 0x72860 calls into it
+      # (AudioThread_UpdateImpl, the per-frame audio task).
+      - [0x1070, c, nad/synthesis]
+      # nad/heap, nad/load and nad/thread are three translation units: IDO rounds each section of an object up to a
+      # multiple of 16, and their rodata at 0x800ABBE0 holds two interior round-ups (12 bytes after AudioHeap_Init's
+      # float, 4 after AudioLoad_Init's), blocks of 48 / 48 / 208. Their .text has none, so each boundary is only pinned
+      # to a window of 16-aligned function starts between the blocks' rodata users, and every choice in it links the
+      # same ROM. The boundaries taken are OoT's load.c and thread.c file starts. nad/os has no rodata; its .data
+      # argues for it (src/main/nad/os.c).
+      - [0x3BF0, c, nad/heap]
+      - [0x6B80, c, nad/load]
+      - [0xA530, c, nad/thread]
+      - [0xB890, c, nad/os]
+      # 16 zero bytes no compiled TU emits (nad/os ends 16-aligned); the link supplies them.
+      - [0xB990, pad]
+      - [0xB9A0, c, nad/playback]
+      - [0xD510, c, nad/effects]
+      - [0xDF30, c, nad/seqplayer]
+      - [0x11120, c, na/na_main]
+      - [0x11330, c, na/na_scene]
+      - [0x11630, c, na/na_event]
+      - [0x11F60, c, na/na_bgm]
+      - [0x12520, c, na/na_se_handle]
+      # 16 zero bytes no compiled TU emits (na/na_se_handle ends 16-aligned); the link supplies them.
+      - [0x128E0, pad]
+      - [0x128F0, c, na/na_se]
+      - [0x192E0, c, na/na_yoshi_status]
+      - [0x19880, c, na/na_game_state]
+      - [0x19B90, c, na/nai_main]
+      - [0x19D60, c, na/nai_port]
+      - [0x1A5B0, c, na/nai_port_buffer]
+      - [0x1A930, c, na/nai_port_write]
+      - [0x1AB90, c, na/nai_bgm]
+      - [0x1B020, c, na/nai_bgm_group]
+      - [0x1B200, c, na/nai_bgm_wait]
+      - [0x1B3A0, c, na/nai_bgm_start]
+      - [0x1B770, c, na/nai_bgm_set]
+      - [0x1BB80, c, na/nai_se]
+      - [0x1BD40, c, na/nai_se_buffer]
+      - [0x1C330, c, na/nai_se_start]
+      - [0x1C690, c, na/nai_se_set]
+      - [0x1C940, c, na/nai_ramp]
       - [0x1CA30, asm]
       - [0x1D1D0, asm]
       - [0x1E360, asm] # Probably has at least 1 file split
@@ -239,6 +259,31 @@
 
 
       - [0x92170, data]
+      # The driver's .data: OoT's data.c (tables only, no .text) first, then each unit's statics and strings in
+      # source order (-use_readwrite_const).
+      - [0x95DB0, .data, nad/data]
+      - [0x98330, .data, nad/synthesis]
+      - [0x983D0, .data, nad/heap]
+      - [0x98A70, .data, nad/load]
+      - [0x99170, .data, nad/thread]
+      - [0x99580, .data, nad/os]
+      - [0x99590, .data, nad/playback]
+      - [0x999A0, .data, nad/effects]
+      - [0x999C0, .data, nad/seqplayer]
+      # na/'s .data: first the session object (OoT's session_config.c: no .text, and built without the driver's
+      # -use_readwrite_const), then one 16-aligned block per object, each owned by the file whose functions write it
+      # (the C files say where that is inferred). 0x99F20 on is game data.
+      - [0x99D50, .data, na/session_config]
+      - [0x99E60, .data, na/na_main]
+      - [0x99E70, .data, na/na_scene]
+      - [0x99E80, .data, na/na_event]
+      - [0x99E90, .data, na/na_bgm]
+      - [0x99EA0, .data, na/na_se] # nine function-scope statics, emitted by the C file
+      - [0x99ED0, .data, na/na_yoshi_status]
+      - [0x99EE0, .data, na/na_game_state]
+      - [0x99F00, .data, na/nai_port]
+      - [0x99F10, .data, na/nai_se_buffer]
+      - [0x99F20, data]
       - start: 0xA8C00
         type: .data
         name:  fault
@@ -278,35 +323,37 @@
       - [0xAC7C0, lib, libultra/libultra, vimgr, .data]
 
 
-      - [0xAC7E0, rodata] # 3BF0
-      - [0xAC810, rodata] # 3BF0
-      - [0xAC840, rodata] # 3BF0
-      - [0xAC910, rodata, B9A0]
-      - [0xAC940, rodata, D510]
-      - [0xAC970, rodata, DF30]
-      - [0xACFB0, rodata] # 11330
-      - [0xAD200, rodata] # 11330
-      - [0xAD8C0, rodata] # 11330
-      - [0xADA90, rodata]
-      - [0xADB60, rodata] # 128F0
-      - [0xAE6E0, rodata] # 128F0
-      - [0xAE960, rodata] # 128F0
-      - [0xAF010, rodata] # 128F0
-      - [0xAF030, rodata] # 128F0
-      - [0xAF0A0, rodata] # 128F0
-      - [0xAF1A0, rodata] # 128F0
-      - [0xAF2A0, rodata] # 128F0
-      - [0xAFCB0, rodata, 192E0]
-      - [0xB0060, rodata]
-      - [0xB0140, rodata, 19D60]
-      - [0xB04D0, rodata, 1AB90]
-      - [0xB05A0, rodata]
-      - [0xB05D0, rodata, 1B770]
-      - [0xB05E0, rodata, 1BB80]
-      - [0xB0620, rodata, 1BD40]
-      - [0xB0640, rodata]
-      - [0xB0740, rodata]
-      - [0xB0760, rodata, 1C690]
+      # nad/synthesis has no rodata (no jump table, no pooled FP literal), so only .text shows it is a unit of its own:
+      # its last function ends with a live delay slot at 0x80002FE8, and the zero word at 0x80002FEC is round-up before
+      # nad/heap starts 16-aligned at 0x80002FF0. IDO puts no padding between the functions of one unit
+      # (AudioHeap_InitPersistentCache ends on a live delay slot, AudioHeap_InitTemporaryCache starts in the next word).
+      #
+      # One `.rodata` line per c file: splat inlines a rodata symbol into the .s of the function that references it
+      # only within one c segment, so a file's rodata split over several lines leaves its symbols undefined at link.
+      - [0xAC7E0, .rodata, nad/heap]
+      - [0xAC810, .rodata, nad/load]
+      - [0xAC840, .rodata, nad/thread]
+      - [0xAC910, .rodata, nad/playback]
+      - [0xAC940, .rodata, nad/effects]
+      - [0xAC970, .rodata, nad/seqplayer]
+      - [0xACFB0, .rodata, na/session_config]
+      - [0xACFC0, .rodata, na/na_main]
+      - [0xAD090, .rodata, na/na_scene]
+      - [0xAD200, .rodata, na/na_event]
+      - [0xAD8C0, .rodata, na/na_bgm]
+      - [0xADA90, .rodata, na/na_se_handle] # orphan debug strings (no %hi reference)
+      - [0xADB60, .rodata, na/na_se]
+      - [0xAFCB0, .rodata, na/na_yoshi_status]
+      - [0xB0060, .rodata, na/na_game_state] # stripped debug prints; they name na_game_state's functions (the MD5 alone cannot tell na_game_state from nai_main)
+      - [0xB0140, .rodata, na/nai_port]
+      - [0xB04D0, .rodata, na/nai_port_buffer]
+      - [0xB0510, .rodata, na/nai_bgm]
+      - [0xB05A0, .rodata, na/nai_bgm_group] # Nai_BgmAnotherGroup's 例外 assert
+      - [0xB05D0, .rodata, na/nai_bgm_set]
+      - [0xB05E0, .rodata, na/nai_se]
+      - [0xB0620, .rodata, na/nai_se_buffer]
+      - [0xB0640, .rodata, na/nai_se_start]
+      - [0xB0740, .rodata, na/nai_se_set]
       - [0xB0780, rodata, 1CA30]
       - [0xB0790, rodata, 1D1D0]
       - [0xB07B0, rodata] # 1E360
@@ -381,7 +428,23 @@
       - [0xB5880, rodata]
 
       - [0xB58B0]
-      - {type: bss, vram: 0x800B4CB0, name: 800B4CB0}
+      # The driver's .bss: load.c's (an unused pad, then AudioLoad_RelocateFontAndPreloadSamples' static), then the
+      # session object's (gAudioCtx and OoT's unused arrays). The ROM does not fix which of the two owns the 0x30
+      # zero bytes in front of gAudioCtx (na/session_config.c).
+      - {type: .bss, vram: 0x800B4CB0, name: nad/load}
+      - {type: .bss, vram: 0x800B4CE0, name: na/session_config}
+      # na/'s .bss: one 16-aligned block per object, each in the file whose functions use it (the C files
+      # say where that is inferred). 0x800C1540 on is game .bss.
+      - {type: .bss, vram: 0x800BA520, name: na/na_bgm}
+      - {type: .bss, vram: 0x800BA530, name: na/na_se_handle}
+      - {type: .bss, vram: 0x800BB7D0, name: na/na_se}
+      - {type: .bss, vram: 0x800BB7E0, name: na/nai_port_buffer}
+      - {type: .bss, vram: 0x800BFFF0, name: na/nai_bgm}
+      - {type: .bss, vram: 0x800C05A0, name: na/nai_bgm_group}
+      - {type: .bss, vram: 0x800C05B0, name: na/nai_bgm_wait}
+      - {type: .bss, vram: 0x800C0660, name: na/nai_se_buffer}
+      - {type: .bss, vram: 0x800C1470, name: na/nai_se_start}
+      - {type: bss, vram: 0x800C1540, name: 800C1540}
       - {type: .bss, vram: 0x80108630, name: fault}
       - {type: bss, vram: 0x801090D0, name: 801090D0}
       - {type: .bss, vram: 0x8010DAA0, name: 7D140}

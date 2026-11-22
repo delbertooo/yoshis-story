@@ -57,7 +57,8 @@ void Heap_Free(Y65430UnkStruct* ptr);
 // 65520
 s32 Heap_GetTotalAllocated(void);
 void Mem_CopyHalfwords(void* dest, void* src, s32 size);
-void Mem_FillHalfwords(MallocRecord* dest, s32 size, s32 value); // MallocRecord* is an artifact; any halfword-aligned buffer
+// MallocRecord* is an artifact; any halfword-aligned buffer
+void Mem_FillHalfwords(MallocRecord* dest, s32 size, s32 value);
 void Rom_LoadSegmented(void* dest, UNK_TYPE segAddr, size_t size);
 void Rom_LoadWith(void* dest, UNK_TYPE src, size_t size, RomLoadFunc loadFn);
 
@@ -89,7 +90,8 @@ void func_80080798(MtxF* mf, f32 x, f32 y);
 void func_80080C84(MtxF* mf, f32 x, f32 y, f32 z);
 
 // loadfragment2
-size_t Overlay_Load(uintptr_t vromStart, uintptr_t vromEnd, uintptr_t vramStart, uintptr_t vramEnd, void* allocatedRamAddr);
+size_t Overlay_Load(uintptr_t vromStart, uintptr_t vromEnd, uintptr_t vramStart, uintptr_t vramEnd,
+                    void* allocatedRamAddr);
 void* Overlay_AllocateAndLoad(uintptr_t vromStart, uintptr_t vromEnd, uintptr_t vramStart, uintptr_t vramEnd);
 
 // Data
@@ -118,6 +120,5 @@ extern UNK_TYPE D_80108624;
 extern UNK_TYPE D_80108628;
 extern struct Input D_8010DEE0;
 extern UNK_TYPE D_8010DF40;
-
 
 #endif

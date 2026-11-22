@@ -1,4 +1,5 @@
 #include "global.h"
+#include "audio.h"
 
 #include "PRinternal/viint.h"
 #include "pad.h"
@@ -19,23 +20,7 @@
 #define HEAP_BLOCK_MAGIC 2323
 #define DEG_TO_RAD 0.01745329238f
 
-// Shared argument block built by the SoundEventParams_Set* ctors and passed, together
-// with a numeric event ID, to the NA sound library's Na_Event dispatcher
-// (e.g. Sound_PostEvent(0x26A, SoundEventParams_SetPos(x, y))). CONFIRMED sound:
-// the dispatcher func_80011D1C prints "NA : pan = %d volume = %f" and its
-// unit holds 49 "NA : Na_Event <NAME>" strings; posX/posY feed the panning.
-typedef struct SoundEventParams {
-    /* 0x00 */ s16 posX; // screen coord clamped [-320,640], scaled x2/5
-    /* 0x02 */ s16 posY;
-    /* 0x04 */ UNK_TYPE unk4;
-    /* 0x08 */ UNK_TYPE unk8; // consumer func_80011D1C switches on 0..12
-    /* 0x0C */ UNK_TYPE unkC;
-    /* 0x10 */ UNK_TYPE unk10;
-    /* 0x14 */ UNK_TYPE unk14;
-    /* 0x18 */ UNK_TYPE unk18;
-    /* 0x1C */ char pad1C[0x04];
-} SoundEventParams; // size = 0x20
-
+// SoundEventParams itself lives in audio.h - na/na_se_handle consumes posX/posY.
 extern SoundEventParams gSoundEventParams;
 
 typedef struct Struct800A65C0 {
@@ -171,6 +156,63 @@ void func_80044CA0(void);
 
 void Main_GameTick(GameMgr* /*arg0*/);
 void func_8007C5EC(void);
+
+// Called without a prototype in scope, as the ROM's calls were compiled: K&R-style declarations, not
+// prototypes. IDO narrows an argument only when a prototype is in scope - Na_SetChibiYoshi,
+// Na_SelectCursor and Na_SetResult take s16 formals, and Na_SetActiveYoshi's u32 is not passed at all.
+// Return types are the definitions'; the func_ ones are still asm and keep the implicit declaration's int.
+s16 Na_GetYoshiStepStatus();
+void Na_SelectCursor();
+void Na_SetActiveYoshi();
+void Na_SetChibiYoshi();
+void Na_SetResult();
+void func_8007C540();
+s32 func_8002ADE4();
+s32 func_8002FC3C();
+s32 func_8004404C();
+s32 func_80044A54();
+s32 func_80044B80();
+s32 func_80044C58();
+s32 func_80044E38();
+s32 func_80045250();
+s32 func_80046560();
+s32 func_8004700C();
+s32 func_80047058();
+s32 func_800505F0();
+s32 func_800519C0();
+s32 func_80051BE8();
+s32 func_80051C24();
+s32 func_80052290();
+s32 func_80052298();
+s32 func_800522B8();
+s32 func_80058160();
+s32 func_800581AC();
+s32 func_80058C7C();
+s32 func_8005A484();
+s32 func_8005A894();
+s32 func_8005A994();
+s32 func_8005A9BC();
+s32 func_8005AA68();
+s32 func_8005D160();
+s32 func_8005D420();
+s32 func_8005DB34();
+s32 func_8005F7D8();
+s32 func_8005F930();
+s32 func_8006C77C();
+s32 func_8006C848();
+s32 func_8006C95C();
+s32 func_8006D1C0();
+s32 func_8006D1CC();
+s32 func_8006D6B4();
+s32 func_8006D774();
+s32 func_8006DDCC();
+s32 func_8006DE24();
+s32 func_8006DF14();
+s32 func_800716C0();
+s32 func_800716F8();
+s32 func_80071D40();
+s32 func_80071D6C();
+s32 func_80072FF0();
 
 // Copies the two pad Inputs at D_8010DEE0 into gInputs and stores a pointer to
 // each in the outInputs array; then, in demo playback (D_800F7EB4) or when the
@@ -784,7 +826,7 @@ void Mem_FillHalfwords(MallocRecord* dest, s32 size, s32 value) {
     {
         // block-scoped result keeps the (s16) reload in the call-return block (lh in the bnez delay slot)
         s32 ok = Mem_ValidateFill((u32)dest, size, 2);
-        dest = (MallocRecord*)(s16)value; // dest reused as the fill value (dead after the call)
+        dest = (MallocRecord*)(s32)(s16)value; // dest reused as the fill value (dead after the call)
         if (ok == 0) {
             Fault_HungUp("./utility.c", 583);
             return;
@@ -1615,10 +1657,10 @@ void System_Init(GameMgr* mgr) {
     D_800A8518 = 150;
 }
 
-// Wrappers over the NA sound library (asm 11120-1BB80; stripped debug strings
+// Wrappers over the NA sound library (src/main/na/; stripped debug strings
 // "NA : Na_*" / "NAI: BgmRoutin/SE Buffer/PortRoutin" name the module). The
-// bare-() wrappers forward their caller's args untouched. Callees kept func_
-// until that module is decompiled; sub_handle is the library's own term.
+// bare-() wrappers forward their caller's args untouched; sub_handle is the
+// library's own term.
 s32 Sound_IsValidSubHandle(s16 subHandle) {
     if (subHandle < 0) {
         goto ret0;
@@ -1632,98 +1674,100 @@ ret1:
     return 1;
 }
 
-void func_800677F8() {
-    func_80010A74();
+// Game-side entry to the NA sound library's event dispatcher; takes an NaEvent id.
+void Sound_Event(s32 event) {
+    Na_Event(event);
 }
 
-// Fires a game event ID at the Na_Event dispatcher (49 "NA : Na_Event <NAME>"
-// strings); callers set pan/volume params via SoundEventParams_SetPos* first
-void Sound_PostEvent() {
-    func_80011D1C();
+// Fires a sound id at the NA library's SE trigger Na_SeTrig; callers set pan/volume
+// params via SoundEventParams_SetPos* first. The game *event* dispatcher is
+// Na_Event, reached through Sound_Event above.
+void Sound_SeTrig(s32 sound, SoundEventParams* params) {
+    Na_SeTrig(sound, params);
 }
 
-void func_80067838(void* arg0, s16 subHandle, UNK_TYPE arg2) {
+void func_80067838(s32 se, s16 subHandle, SoundEventParams* params) {
     if (Sound_IsValidSubHandle(subHandle) != 0) {
-        func_80015E74(arg0, subHandle, arg2);
+        Na_SeStart(se, subHandle, params);
     }
 }
 
-void func_80067878(void* arg0, s16 subHandle) {
+void func_80067878(s32 se, s16 subHandle) {
     if (Sound_IsValidSubHandle(subHandle) != 0) {
-        func_80011990(arg0, subHandle);
+        Na_SeLevelStop(se, subHandle);
     }
 }
 
 void func_800678B0(void) {
-    func_80011C64();
+    Na_LevelSeStop();
 }
 
 void func_800678D0(void) {
-    func_80011C3C();
+    Na_AllSeStop();
 }
 
-void func_800678F0(void* arg0, s16 subHandle, UNK_TYPE arg2) {
+void func_800678F0(s32 se, s16 subHandle, SoundEventParams* params) {
     if (Sound_IsValidSubHandle(subHandle) != 0) {
-        func_8001759C(arg0, subHandle, arg2);
+        Na_SeLevelChange(se, subHandle, params);
     }
 }
 
-// Validated call: returns func_80011928 result if subHandle in [0,9], else 0
-s32 func_80067930(void* arg0, s16 subHandle) {
+// Validated call: returns Na_SeLevelCheck result if subHandle in [0,9], else 0
+s32 func_80067930(s32 se, s16 subHandle) {
     if (Sound_IsValidSubHandle(subHandle) == 0) {
         return 0;
     }
-    return func_80011928(arg0, subHandle);
+    return Na_SeLevelCheck(se, subHandle);
 }
 
 void func_80067970(void) {
-    func_80010640();
+    Na_PauseOn();
 }
 
 void func_80067990(void) {
-    func_80010688();
+    Na_PauseOff();
 }
 
-void func_800679B0() {
-    func_80010730();
+void func_800679B0(s32 arg0) {
+    Na_SceneChange(arg0);
 }
 
-void func_800679D0() {
-    func_800106CC();
+void func_800679D0(s32 arg0) {
+    Na_SetSoundOutputMode(arg0);
 }
 
-// Forwards status 0-3 to func_800186E0 = "NA : Na_YoshiStatusChange %d";
+// Forwards status 0-3 to Na_YoshiStatusChange = "NA : Na_YoshiStatusChange %d";
 // music mood reaction (per-track volume/fade changes on petal-count thresholds)
-void Sound_YoshiStatusChange(void) {
-    func_800186E0();
+void Sound_YoshiStatusChange(s32 status) {
+    Na_YoshiStatusChange(status);
 }
 
 void func_80067A10(void) {
-    func_80018E68();
+    Na_GetYoshiStepStatus();
 }
 
 void func_80067A30(void) {
-    func_80018EE8();
+    Na_SetActiveYoshi();
 }
 
 void func_80067A50(s16 arg0) {
-    func_80018C98(arg0);
+    Na_SetChibiYoshi(arg0);
 }
 
 void func_80067A78(s16 arg0, s16 arg1) {
-    func_80018EBC(arg0, arg1);
+    Na_SelectCursor(arg0, arg1);
 }
 
 void func_80067AAC(void) {
-    func_80010558();
+    Na_GameFrameWork();
 }
 
 void func_80067ACC(UNK_TYPE arg0, s16 arg1) {
-    func_80018CB0(arg0, arg1);
+    Na_SetTimerCount(arg0, arg1);
 }
 
 void func_80067AF4(s16 arg0) {
-    func_80018C80(arg0);
+    Na_SetResult(arg0);
 }
 
 void func_80067B1C(void) {
@@ -1771,84 +1815,83 @@ SoundEventParams* SoundEventParams_SetPos(s32 x, s32 y) {
     return &gSoundEventParams;
 }
 
-SoundEventParams* SoundEventParams_SetPosUnk4(UNK_TYPE unk4, UNK_TYPE x, UNK_TYPE y) {
+SoundEventParams* SoundEventParams_SetPosYoshiColor(s32 yoshiColor, s32 x, s32 y) {
     SoundEventParams_SetPos(x, y);
-    gSoundEventParams.unk4 = unk4;
+    gSoundEventParams.yoshiColor = yoshiColor;
     return &gSoundEventParams;
 }
 
-SoundEventParams* SoundEventParams_SetPosUnk8(UNK_TYPE unk8, UNK_TYPE x, UNK_TYPE y) {
+SoundEventParams* SoundEventParams_SetPosGround(s32 ground, s32 x, s32 y) {
     SoundEventParams_SetPos(x, y);
-    gSoundEventParams.unk8 = unk8;
+    gSoundEventParams.ground = ground;
     return &gSoundEventParams;
 }
 
-SoundEventParams* SoundEventParams_SetPosUnk4Unk8(UNK_TYPE unk4, UNK_TYPE unk8, UNK_TYPE x, UNK_TYPE y) {
+SoundEventParams* SoundEventParams_SetPosYoshiColorGround(s32 yoshiColor, s32 ground, s32 x, s32 y) {
     SoundEventParams_SetPos(x, y);
-    gSoundEventParams.unk8 = unk8;
-    gSoundEventParams.unk4 = unk4;
+    gSoundEventParams.ground = ground;
+    gSoundEventParams.yoshiColor = yoshiColor;
     return &gSoundEventParams;
 }
 
-SoundEventParams* SoundEventParams_SetPosUnkC(UNK_TYPE unkC, UNK_TYPE x, UNK_TYPE y) {
-    SoundEventParams_SetPos(x, y);
-    gSoundEventParams.unkC = unkC;
-    return &gSoundEventParams;
-}
-
-SoundEventParams* SoundEventParams_SetPosUnk4UnkC(UNK_TYPE unk4, UNK_TYPE unkC, UNK_TYPE x, UNK_TYPE y) {
+SoundEventParams* SoundEventParams_SetPosUnkC(UNK_TYPE unkC, s32 x, s32 y) {
     SoundEventParams_SetPos(x, y);
     gSoundEventParams.unkC = unkC;
-    gSoundEventParams.unk4 = unk4;
     return &gSoundEventParams;
 }
 
-SoundEventParams* SoundEventParams_SetUnk14(UNK_TYPE unk14) {
+SoundEventParams* SoundEventParams_SetPosYoshiColorUnkC(s32 yoshiColor, UNK_TYPE unkC, s32 x, s32 y) {
+    SoundEventParams_SetPos(x, y);
+    gSoundEventParams.unkC = unkC;
+    gSoundEventParams.yoshiColor = yoshiColor;
+    return &gSoundEventParams;
+}
+
+SoundEventParams* SoundEventParams_SetValue(s32 value) {
     SoundEventParams* p = &gSoundEventParams;
 
-    p->unk14 = unk14;
+    p->value = value;
     return p;
 }
 
-SoundEventParams* SoundEventParams_SetUnk18(UNK_TYPE unk18) {
+SoundEventParams* SoundEventParams_SetValue2(s32 value2) {
     SoundEventParams* p = &gSoundEventParams;
 
-    p->unk18 = unk18;
+    p->value2 = value2;
     return p;
 }
 
-SoundEventParams* SoundEventParams_SetUnk14Unk18(UNK_TYPE unk14, UNK_TYPE unk18) {
+SoundEventParams* SoundEventParams_SetValueValue2(s32 value, s32 value2) {
     SoundEventParams* p = &gSoundEventParams;
 
-    p->unk14 = unk14;
-    p->unk18 = unk18;
+    p->value = value;
+    p->value2 = value2;
     return p;
 }
 
-SoundEventParams* SoundEventParams_SetPosUnk14(UNK_TYPE unk14, UNK_TYPE x, UNK_TYPE y) {
+SoundEventParams* SoundEventParams_SetPosValue(s32 value, s32 x, s32 y) {
     SoundEventParams_SetPos(x, y);
-    gSoundEventParams.unk14 = unk14;
+    gSoundEventParams.value = value;
     return &gSoundEventParams;
 }
 
-SoundEventParams* SoundEventParams_SetPosUnk4Unk14(UNK_TYPE unk4, UNK_TYPE unk14, UNK_TYPE x, UNK_TYPE y) {
-    SoundEventParams_SetPosUnk14(unk14, x, y);
-    gSoundEventParams.unk4 = unk4;
+SoundEventParams* SoundEventParams_SetPosYoshiColorValue(s32 yoshiColor, s32 value, s32 x, s32 y) {
+    SoundEventParams_SetPosValue(value, x, y);
+    gSoundEventParams.yoshiColor = yoshiColor;
     return &gSoundEventParams;
 }
 
-SoundEventParams* SoundEventParams_SetPosUnk4Unk14Unk18(UNK_TYPE unk4, UNK_TYPE unk14, UNK_TYPE unk18, UNK_TYPE x,
-                                                        UNK_TYPE y) {
+SoundEventParams* SoundEventParams_SetPosYoshiColorValueValue2(s32 yoshiColor, s32 value, s32 value2, s32 x, s32 y) {
     SoundEventParams_SetPos(x, y);
-    SoundEventParams_SetUnk14Unk18(unk14, unk18);
-    gSoundEventParams.unk4 = unk4;
+    SoundEventParams_SetValueValue2(value, value2);
+    gSoundEventParams.yoshiColor = yoshiColor;
     return &gSoundEventParams;
 }
 
-SoundEventParams* SoundEventParams_SetPosUnk8Unk14(UNK_TYPE unk8, UNK_TYPE unk14, UNK_TYPE x, UNK_TYPE y) {
+SoundEventParams* SoundEventParams_SetPosGroundValue(s32 ground, s32 value, s32 x, s32 y) {
     SoundEventParams_SetPos(x, y);
-    gSoundEventParams.unk8 = unk8;
-    gSoundEventParams.unk14 = unk14;
+    gSoundEventParams.ground = ground;
+    gSoundEventParams.value = value;
     return &gSoundEventParams;
 }
 
@@ -1859,45 +1902,45 @@ SoundEventParams* SoundEventParams_SetUnk10(UNK_TYPE unk10) {
     return p;
 }
 
-void SoundEventParams_SetPosY60(UNK_TYPE x) {
-    SoundEventParams_SetPos(x, 0x3C);
+SoundEventParams* SoundEventParams_SetPosY60(s32 x) {
+    return SoundEventParams_SetPos(x, 0x3C);
 }
 
-void SoundEventParams_SetPosUnk4Y60(UNK_TYPE unk4, UNK_TYPE x) {
-    SoundEventParams_SetPosUnk4(unk4, x, 0x3C);
+SoundEventParams* SoundEventParams_SetPosYoshiColorY60(s32 yoshiColor, s32 x) {
+    return SoundEventParams_SetPosYoshiColor(yoshiColor, x, 0x3C);
 }
 
-void SoundEventParams_SetPosUnk8Y60(UNK_TYPE unk8, UNK_TYPE x) {
-    SoundEventParams_SetPosUnk8(unk8, x, 0x3C);
+SoundEventParams* SoundEventParams_SetPosGroundY60(s32 ground, s32 x) {
+    return SoundEventParams_SetPosGround(ground, x, 0x3C);
 }
 
-void SoundEventParams_SetPosUnk4Unk8Y60(UNK_TYPE unk4, UNK_TYPE unk8, UNK_TYPE x) {
-    SoundEventParams_SetPosUnk4Unk8(unk4, unk8, x, 0x3C);
+SoundEventParams* SoundEventParams_SetPosYoshiColorGroundY60(s32 yoshiColor, s32 ground, s32 x) {
+    return SoundEventParams_SetPosYoshiColorGround(yoshiColor, ground, x, 0x3C);
 }
 
-void SoundEventParams_SetPosUnkCY60(UNK_TYPE unkC, UNK_TYPE x) {
-    SoundEventParams_SetPosUnkC(unkC, x, 0x3C);
+SoundEventParams* SoundEventParams_SetPosUnkCY60(UNK_TYPE unkC, s32 x) {
+    return SoundEventParams_SetPosUnkC(unkC, x, 0x3C);
 }
 
-void SoundEventParams_SetPosUnk4UnkCY60(UNK_TYPE unk4, UNK_TYPE unkC, UNK_TYPE x) {
-    SoundEventParams_SetPosUnk4UnkC(unk4, unkC, x, 0x3C);
+SoundEventParams* SoundEventParams_SetPosYoshiColorUnkCY60(s32 yoshiColor, UNK_TYPE unkC, s32 x) {
+    return SoundEventParams_SetPosYoshiColorUnkC(yoshiColor, unkC, x, 0x3C);
 }
 
-void SoundEventParams_SetPosUnk14Y60(UNK_TYPE unk14, UNK_TYPE x) {
-    SoundEventParams_SetPosUnk14(unk14, x, 0x3C);
+SoundEventParams* SoundEventParams_SetPosValueY60(s32 value, s32 x) {
+    return SoundEventParams_SetPosValue(value, x, 0x3C);
 }
 
-void SoundEventParams_SetPosUnk8Unk14Y60(UNK_TYPE unk8, UNK_TYPE unk14, UNK_TYPE x) {
-    SoundEventParams_SetPosUnk8Unk14(unk8, unk14, x, 0x3C);
+SoundEventParams* SoundEventParams_SetPosGroundValueY60(s32 ground, s32 value, s32 x) {
+    return SoundEventParams_SetPosGroundValue(ground, value, x, 0x3C);
 }
 
 // Finds first free slot in [0,9], installs arg1 there, returns slot index (or 10 if full)
-s16 func_80067F78(void* arg0, UNK_TYPE arg1) {
+s16 func_80067F78(s32 se, SoundEventParams* params) {
     s16 i;
 
     for (i = 0; i < 10; i++) {
-        if (func_80067930(arg0, i) == 0) {
-            func_80067838(arg0, i, arg1);
+        if (func_80067930(se, i) == 0) {
+            func_80067838(se, i, params);
             return i;
         }
     }
@@ -1907,7 +1950,7 @@ s16 func_80067F78(void* arg0, UNK_TYPE arg1) {
 extern s32 gResetState;
 
 // Initializes video, resets state flags, and triggers double scene load if gResetState == 2
-void Main_SoftReset(s32 arg0) {
+void Main_SoftReset(UNUSED s32 arg0) {
     s32* p = &gResetState;
     p += 0; // matching: forces access through pointer
 
@@ -1997,20 +2040,20 @@ void Main_SoundFadeTick(void) {
         if (*(s32*)((u8*)&gGameMgr + 0x14EC) != 0) {
             return;
         }
-        func_800677F8(0x14);
+        Sound_Event(NA_EVENT_TIMER_START);
         *(s32*)((u8*)&gGameMgr + 0x14EC) = 1;
     } else {
         if (*(s32*)((u8*)&gGameMgr + 0x14EC) == 0) {
             return;
         }
-        func_800677F8(0x15);
+        Sound_Event(NA_EVENT_TIMER_END);
         *(s32*)((u8*)&gGameMgr + 0x14EC) = 0;
     }
 }
 
 void Main_StopSoundFade(void) {
     if (D_800F938C != 0) {
-        func_800677F8(0x15);
+        Sound_Event(NA_EVENT_TIMER_END);
         func_80067ACC(0, 0);
         *(s32*)((u8*)&gGameMgr + 0x14EC) = 0;
         *(s32*)((u8*)&gGameMgr + 0x14E8) = 0;
@@ -2076,7 +2119,9 @@ void Main_FreeFrameImage(void) {
 
 // Register a callback into gGameMgr's callback array (max 20 slots)
 // Stores {func, data} into the next callback slot and increments callbackCount.
-// Pointer trick + count reset needed to match original compiler output.
+// Pointer trick + count reset needed to match original compiler output. The always-true return is
+// load-bearing as a POINTER compare, which IDO folds to `li v0,1` (cast to u32 it stays a real sltu);
+// `(void**)NULL` instead of NULL only keeps GCC's -Waddress quiet, the object is the same.
 s32 Main_RegisterCallback(void (*func)(UNK_TYPE), UNK_TYPE data) {
     s16 count = gGameMgr.callbackCount;
     void** entry;
@@ -2104,7 +2149,7 @@ s32 Main_RegisterCallback(void (*func)(UNK_TYPE), UNK_TYPE data) {
     entry[0] = (void*)data;
     gGameMgr.callbackCount++;
 
-    return (void**)&gGameMgr.callbacks[count] != NULL;
+    return (void**)&gGameMgr.callbacks[count] != (void**)NULL;
 }
 
 // Dispatches queued callbacks, then clears count
@@ -2143,7 +2188,7 @@ void Main_FrameCallback(GameMgr* arg0) {
 void Main_FirstFrameCallback(GameMgr* arg0) {
     gGameMgr.unkF0 = gGameMgr.frameImage;
     func_800716C0();
-    arg0->callback = (void (*)(UNK_TYPE))Main_FrameCallback;
+    arg0->callback = (void (*)(UNK_TYPE))(void*)Main_FrameCallback;
     func_800716F8();
 }
 
@@ -2195,7 +2240,7 @@ void Main_ResetSubsystems(u8* mgr) {
     func_8005D160(mgr + 0x8D0);
     func_80046560();
     func_80051BE8(*(s32*)(mgr + 0x634));
-    Mem_FillHalfwords(mgr + 0x478, 0x104, 0);
+    Mem_FillHalfwords((MallocRecord*)(mgr + 0x478), 0x104, 0);
     func_8006D6B4(mgr + 0x57C);
 }
 
@@ -2232,7 +2277,7 @@ void func_800493F4(void);
 
 // Dispatches mode transition: invokes callback for mode 0x24, advances or resets subsystem entries
 void func_800688CC(void) {
-    void* entry;
+    s32 entry;
     s32 flag;
     s32 mode;
 
@@ -2252,11 +2297,11 @@ void func_800688CC(void) {
         func_800679B0(0);
     }
 
-    entry = *(void**)((u8*)D_800F843C + 0x118);
+    entry = *(s32*)((u8*)D_800F843C + 0x118);
     if (entry != 0 && flag == 0) {
-        func_800677F8();
+        Sound_Event(entry);
     }
-    entry = *(void**)((u8*)D_800F843C + 0x108);
+    entry = *(s32*)((u8*)D_800F843C + 0x108);
     if (entry != 0) {
         func_80067838(entry, 0, 0);
     }
@@ -2302,8 +2347,8 @@ void Main_ResetMode(void* arg0) {
     Main_FreeFrameImage();
     Rumble_Reset();
 
-    if (func_80067930(*(void**)((u8*)s0->unk59C + 0x108), 0) == 1) {
-        func_80067878(*(void**)((u8*)s0->unk59C + 0x108), 0);
+    if (func_80067930(*(s32*)((u8*)s0->unk59C + 0x108), 0) == 1) {
+        func_80067878(*(s32*)((u8*)s0->unk59C + 0x108), 0);
     }
     D_800A8520 = 1;
 
@@ -2370,7 +2415,7 @@ s32 Main_RunModeStartupPhases(arg0) void* arg0;
 s32 Main_ModeRestartStep(GameMgr* arg0) {
     func_80072FF0();
     Main_ResetMode(arg0);
-    arg0->callback = (void (*)(UNK_TYPE))Main_FirstFrameCallback;
+    arg0->callback = (void (*)(UNK_TYPE))(void*)Main_FirstFrameCallback;
     Main_RunModeStartupPhases(arg0);
     return 0;
 }
@@ -2477,7 +2522,7 @@ void Main_Loop(void) {
         Stub_Empty();
         func_80067AAC();
         if (gGameMgr.callback != 0) {
-            ((void (*)(GameMgr*))gGameMgr.callback)(&gGameMgr);
+            ((void (*)(GameMgr*))(void*)gGameMgr.callback)(&gGameMgr);
             func_8005DB34();
         }
     }
@@ -2514,7 +2559,7 @@ void Main_Init(void) {
     func_80058160((u8*)s0 + 0xA68);
     func_8005D420((u8*)s0 + 0x8D0);
     func_8005F930(s0);
-    *(void (**)(UNK_TYPE))((u8*)s0 + 0x24) = (void (*)(UNK_TYPE))Main_FirstFrameCallback;
+    *(void (**)(UNK_TYPE))((u8*)s0 + 0x24) = (void (*)(UNK_TYPE))(void*)Main_FirstFrameCallback;
     func_800522B8((u8*)s0 + 0xAA0);
     func_8006D1C0();
     func_80067B1C();
@@ -2538,7 +2583,7 @@ void func_800748D8(UNK_PTR, u8*);
 // that strength decays by gRumbleDecay toward 0. Flags go to padmgr's motor command
 // (func_800748D8 -> osMotorStart/Stop in 740F0.s). arg0 != 0 forces motors off.
 //
-// Matching notes (lab/func_80069030/ v13-v59): three late-fold/`same-line constructs
+// Matching notes: three late-fold/same-line constructs
 // are load-bearing. `+ i * 0` keeps the gRumbleAccum materialization in-block (looks
 // loop-variant at LICM, folds to 0 after). `+ arg0 * 0` on the gRumbleDecay base stays
 // hoistable (invariant) but folds late, demoting that web below the 100/4 constant
@@ -2648,7 +2693,7 @@ s32 func_8006920C(Y65520UnkStruct* arg0) {
     arg0->unkF9 = 0;
 
     if (arg0->unkEC == (void*)Stub_Return0) {
-        Vec3f_Copy(arg0, &arg0->unk84);
+        Vec3f_Copy((f32*)arg0, &arg0->unk84);
         arg0->unkAC = 0.0f;
         arg0->unkB0 = 0.0f;
     }
@@ -2708,7 +2753,6 @@ s32 func_800692D4(Y692D4Arg* arg0) {
                 }
             }
         }
-    fail:
         return 0;
     ok:
         switch (arg0->unk1EC) {
@@ -2717,28 +2761,28 @@ s32 func_800692D4(Y692D4Arg* arg0) {
                 (*arg0->unk174)->unk18 = 0x4222;
                 (*arg0->unk174)->unk1A = 0x2244;
                 arg0->unk1EC = 0;
-                Sound_PostEvent(0x26A, SoundEventParams_SetPos(arg0->x, arg0->y));
+                Sound_SeTrig(0x26A, SoundEventParams_SetPos(arg0->x, arg0->y));
                 return 1;
             case 0:
                 func_8004590C(arg0, base + 0x600);
                 (*arg0->unk174)->unk18 = 0x2224;
                 (*arg0->unk174)->unk1A = 0x4244;
                 arg0->unk1EC = 3;
-                Sound_PostEvent(0x26A, SoundEventParams_SetPos(arg0->x, arg0->y));
+                Sound_SeTrig(0x26A, SoundEventParams_SetPos(arg0->x, arg0->y));
                 return 1;
             case 3:
                 func_8004590C(arg0, base);
                 (*arg0->unk174)->unk18 = 0x2422;
                 (*arg0->unk174)->unk1A = 0x2444;
                 arg0->unk1EC = 1;
-                Sound_PostEvent(0x26A, SoundEventParams_SetPos(arg0->x, arg0->y));
+                Sound_SeTrig(0x26A, SoundEventParams_SetPos(arg0->x, arg0->y));
                 return 1;
             case 1:
                 func_8004590C(arg0, base + 0x200);
                 (*arg0->unk174)->unk18 = 0x2242;
                 (*arg0->unk174)->unk1A = 0x2244;
                 arg0->unk1EC = 2;
-                Sound_PostEvent(0x26A, SoundEventParams_SetPos(arg0->x, arg0->y));
+                Sound_SeTrig(0x26A, SoundEventParams_SetPos(arg0->x, arg0->y));
                 return 1;
         }
     }
@@ -2918,7 +2962,7 @@ extern StackEntry sEepStackInfo;
 // Stamps checksum + magic and writes data mirrored into both EEPROM copies; returns 1 on failure
 s32 SaveData_WriteEeprom(void* data) {
     Mem_CopyHalfwords(&sEepBuff[0].data, data, ARRAY_COUNT(sEepBuff[0].data));
-    sEepBuff[0].checksum = SaveData_Checksum(sEepBuff);
+    sEepBuff[0].checksum = SaveData_Checksum((u8*)sEepBuff);
     sEepBuff[0].magic = EEPBUFFER_MAGIC;
     sEepBuff[1] = sEepBuff[0];
 
@@ -2939,12 +2983,12 @@ s32 SaveData_ReadEeprom(UNK_PTR dest) {
         return 1;
     }
 
-    if ((sEepBuff[0].checksum == SaveData_Checksum(&sEepBuff[0])) && (sEepBuff[0].magic == EEPBUFFER_MAGIC)) {
+    if ((sEepBuff[0].checksum == SaveData_Checksum((u8*)&sEepBuff[0])) && (sEepBuff[0].magic == EEPBUFFER_MAGIC)) {
         Mem_CopyHalfwords(dest, &sEepBuff[0].data, ARRAY_COUNT(sEepBuff[0].data));
         return 0;
     }
 
-    if ((sEepBuff[1].checksum == SaveData_Checksum(&sEepBuff[1])) && (sEepBuff[1].magic == EEPBUFFER_MAGIC)) {
+    if ((sEepBuff[1].checksum == SaveData_Checksum((u8*)&sEepBuff[1])) && (sEepBuff[1].magic == EEPBUFFER_MAGIC)) {
         Mem_CopyHalfwords(dest, &sEepBuff[1].data, ARRAY_COUNT(sEepBuff[1].data));
         return 0;
     }

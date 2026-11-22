@@ -219,6 +219,10 @@ $(shell mkdir -p $(BUILD_DIR)/linker_scripts/$(VERSION) $(BUILD_DIR)/linker_scri
 
 # directory flags
 build/src/main/O2/%.o: OPTFLAGS := -O2
+build/src/main/na/%.o: OPTFLAGS := -O2
+build/src/main/nad/%.o: OPTFLAGS := -O2
+# The driver's string literals sit in .data among each unit's statics, in source order; na/'s stay in .rodata.
+build/src/main/nad/%.o: CFLAGS += -use_readwrite_const
 
 # per-file flags
 build/src/main/fault.o: CFLAGS += -trapuv

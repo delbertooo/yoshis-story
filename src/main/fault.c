@@ -135,7 +135,7 @@ s32 Fault_Printf(s32 x, s32 y, const char* fmt, ...) {
 
     pos.x = x;
     pos.y = y;
-    ret = _Printf(*Fault_PrintCallback, (char*)&pos, fmt, ap);
+    ret = _Printf(Fault_PrintCallback, (char*)&pos, fmt, ap);
 
     va_end(ap);
 
